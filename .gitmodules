@@ -1,9 +1,11 @@
 [submodule "SDL"]
 	path = SDL
 	url = https://github.com/libsdl-org/SDL.git
+	branch = SDL2
 [submodule "SDL_image"]
 	path = SDL_image
 	url = https://github.com/libsdl-org/SDL_image.git
+	branch = SDL2
 [submodule "discord-rpc"]
 	path = discord-rpc
 	url = https://github.com/hieuxyz00/discord-rpc.git

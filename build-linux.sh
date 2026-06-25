@@ -42,18 +42,6 @@ REQUIRED_PACKAGES=(
     libgl1-mesa-dev
     libcurl4-openssl-dev
     zlib1g-dev
-    libxcursor-dev
-    libasound2-dev
-    libpulse-dev
-    libxi-dev
-    libxrandr-dev
-    libxss-dev
-    libxinerama-dev
-    libwayland-dev
-    libxkbcommon-dev
-    libdrm-dev
-    libgbm-dev
-    libxtst-dev
 )
 
 PACKAGES_TO_INSTALL=()

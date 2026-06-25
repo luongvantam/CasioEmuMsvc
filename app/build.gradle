@@ -16,6 +16,7 @@ android {
         namespace "com.tele.u8emulator"
     }
     compileSdkVersion 35
+    ndkVersion "27.0.12077973"
     defaultConfig {
         minSdkVersion 24
         targetSdkVersion 35

@@ -28,7 +28,7 @@ jobs:
             os: ubuntu-latest
             name: "Android"
           - platform: mac
-#             os: macos-latest
+            os: macos-latest
             name: "macOS"
           - platform: linux
             os: ubuntu-latest

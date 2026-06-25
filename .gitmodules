@@ -11,5 +11,5 @@
 	path = sentry-native
 	url = https://github.com/getsentry/sentry-native.git
 [submodule "CasioEmuMsvc/third_party/asmjit"]
-        path = CasioEmuMsvc/third_party/asmjit
-        url = https://github.com/asmjit/asmjit
+	path = CasioEmuMsvc/third_party/asmjit
+	url = https://github.com/asmjit/asmjit

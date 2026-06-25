@@ -45,6 +45,7 @@ REQUIRED_PACKAGES=(
     libxcursor-dev
     libasound2-dev
     libpulse-dev
+    libxi-dev
 )
 
 PACKAGES_TO_INSTALL=()

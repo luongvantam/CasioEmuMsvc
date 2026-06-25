@@ -355,9 +355,8 @@ if(CASIOEMU_WEB)
     endif()
 elseif(BUILD_EXECUTABLE)
     target_link_libraries(${TARGET_NAME} PRIVATE
-        SDL2::SDL2main
-        SDL2::SDL2
-        SDL2_image::SDL2_image-static
+        SDL3::SDL3
+        SDL3_image::SDL3_image-static
         #CpuFeatures::cpu_features
     )
     if(NOT IOS)
@@ -365,7 +364,6 @@ elseif(BUILD_EXECUTABLE)
     endif()
     if(WIN32)
         target_link_libraries(${TARGET_NAME} PRIVATE
-            SDL2::SDL2main
             winmm
             dwmapi
             dbghelp
@@ -408,8 +406,8 @@ elseif(BUILD_EXECUTABLE)
     endif()
 else()
     target_link_libraries(${TARGET_NAME} PRIVATE
-        SDL2::SDL2
-        SDL2_image::SDL2_image
+        SDL3::SDL3
+        SDL3_image::SDL3_image
         #CpuFeatures::cpu_features
     )
     if(NOT IOS)

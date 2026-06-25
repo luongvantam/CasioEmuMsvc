@@ -47,6 +47,12 @@ REQUIRED_PACKAGES=(
     libpulse-dev
     libxi-dev
     libxrandr-dev
+    libxss-dev
+    libxinerama-dev
+    libwayland-dev
+    libxkbcommon-dev
+    libdrm-dev
+    libgbm-dev
 )
 
 PACKAGES_TO_INSTALL=()

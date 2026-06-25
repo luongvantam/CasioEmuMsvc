@@ -46,6 +46,7 @@ REQUIRED_PACKAGES=(
     libasound2-dev
     libpulse-dev
     libxi-dev
+    libxrandr-dev
 )
 
 PACKAGES_TO_INSTALL=()

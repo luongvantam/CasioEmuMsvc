@@ -53,6 +53,7 @@ REQUIRED_PACKAGES=(
     libxkbcommon-dev
     libdrm-dev
     libgbm-dev
+    libxtst-dev
 )
 
 PACKAGES_TO_INSTALL=()

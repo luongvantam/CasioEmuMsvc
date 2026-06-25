@@ -1,0 +1,313 @@
+#include "WatchWindow.hpp"
+#include "Chipset/CPU.hpp"
+#include "Chipset/Chipset.hpp"
+#include "Chipset/ePSCpu.h"
+#include "CodeViewer.hpp"
+#include "Config.hpp"
+#include "Models.h"
+#include "Peripheral/BatteryBackedRAM.hpp"
+#include "Ui.hpp"
+#include "imgui/imgui.h"
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <iomanip>
+#include <stdlib.h>
+
+void WatchWindow::PrepareRX() {
+	auto eps = m_emu->chipset.epscpu;
+	if (eps) {
+        snprintf(reg_pc, sizeof(reg_pc), "%05x", eps->PC() >> 1);
+		if (eps->FSR & 0x80) {
+            snprintf(reg_lr, sizeof(reg_lr), "%05x", (uint32_t)((eps->BSR << 7) | (eps->FSR & 0x7f)));
+		}
+		else {
+            snprintf(reg_lr, sizeof(reg_lr), "%02x(SFR)", (uint32_t)((eps->FSR & 0x7f)));
+		}
+        snprintf(reg_ea, sizeof(reg_ea), "%05x", (uint32_t)((eps->BSR1 << 7) | (eps->FSR1 & 0x7f)));
+        snprintf(reg_ex1, sizeof(reg_ex1), "%05x", (uint32_t)((eps->BSR2 << 7) | (eps->FSR2 & 0x7f)));
+        snprintf(reg_ex2, sizeof(reg_ex2), "%05x", (uint32_t)(((eps->LCDARH & 0x03) * 0x60) | eps->LCDARL));
+        snprintf(reg_sp, sizeof(reg_sp), "%04x", eps->STKPTR << 1);
+        snprintf(reg_psw, sizeof(reg_psw), "%02x", eps->STATUS);
+        snprintf(reg_dsr, sizeof(reg_dsr), "%02x", eps->BSR);
+	}
+	else {
+		for (int i = 0; i < 16; i++) {
+            snprintf((char*)reg_rx[i], sizeof(reg_rx[i]), "%02x", m_emu->chipset.cpu.reg_r[i] & 0x0ff);
+		}
+        snprintf(reg_pc, sizeof(reg_pc), "%05x", (uint32_t)(m_emu->chipset.cpu.reg_csr << 16) | m_emu->chipset.cpu.reg_pc);
+        snprintf(reg_lr, sizeof(reg_lr), "%05x", (uint32_t)(m_emu->chipset.cpu.reg_lcsr << 16) | m_emu->chipset.cpu.reg_lr);
+        snprintf(reg_sp, sizeof(reg_sp), "%04x", m_emu->chipset.cpu.reg_sp | 0);
+        snprintf(reg_ea, sizeof(reg_ea), "%04x", m_emu->chipset.cpu.reg_ea | 0);
+        snprintf(reg_psw, sizeof(reg_psw), "%02x", m_emu->chipset.cpu.reg_psw | 0);
+        snprintf(reg_dsr, sizeof(reg_dsr), "%02x", m_emu->chipset.cpu.reg_dsr | 0);
+	}
+}
+
+void WatchWindow::ShowRX() {
+	char id[10];
+	if (m_emu->chipset.epscpu) {
+	}
+	else {
+		ImGui::TextColored(~UIHelpers::kColorSuccess, "RXn: ");
+		for (int i = 0; i < 16; i++) {
+			ImGui::SameLine();
+            snprintf(id, sizeof(id), "##data%d", i);
+			ImGui::SetNextItemWidth(char_width * 3);
+			ImGui::TextUnformatted((char*)&reg_rx[i][0]);
+		}
+		ImGui::TextUnformatted("ERn: ");
+		for (int i = 0; i < 16; i += 2) {
+			ImGui::SameLine();
+			uint16_t val = m_emu->chipset.cpu.reg_r[i + 1]
+							   << 8 |
+						   m_emu->chipset.cpu.reg_r[i];
+			ImGui::Text("%04x ", val);
+		}
+	}
+	auto show_sfr = ([&](char* ptr, const char* label, int i, int width = 4) {
+		ImGui::TextColored(~UIHelpers::kColorSuccess, "%s", label);
+		ImGui::SameLine();
+        snprintf(id, sizeof(id), "##sfr%d", i);
+		ImGui::SetNextItemWidth(char_width * width + 5);
+		ImGui::TextUnformatted(ptr);
+	});
+	show_sfr(reg_pc, "PC: ", 1, 6);
+	ImGui::SameLine();
+	if (m_emu->chipset.epscpu) {
+		show_sfr(reg_lr, "INDF0: ", 2, 6);
+		ImGui::SameLine();
+		show_sfr(reg_ea, "INDF1: ", 3, 6);
+		ImGui::SameLine();
+		show_sfr(reg_ex1, "INDF2: ", 7, 6);
+		ImGui::SameLine();
+		show_sfr(reg_sp, "STKPTR: ", 4);
+		ImGui::SameLine();
+		show_sfr(reg_psw, "STATUS: ", 5, 2);
+		ImGui::SameLine();
+		show_sfr(reg_dsr, "BSR: ", 6, 2);
+		show_sfr(reg_ex2, "LCDAR: ", 8, 6);
+	}
+	else {
+		show_sfr(reg_lr, "LR: ", 2, 6);
+		ImGui::SameLine();
+		show_sfr(reg_ea, "EA: ", 3);
+		ImGui::SameLine();
+		show_sfr(reg_sp, "SP: ", 4);
+		ImGui::SameLine();
+		show_sfr(reg_psw, "PSW: ", 5, 2);
+		ImGui::SameLine();
+		show_sfr(reg_dsr, "DSR: ", 6, 2);
+	}
+}
+void WatchWindow::ModRX() {
+	char id[10];
+	ImGui::TextColored(~UIHelpers::kColorSuccess, "RXn: ");
+	for (int i = 0; i < 16; i++) {
+		ImGui::SameLine();
+        snprintf(id, sizeof(id), "##data%d", i);
+		ImGui::SetNextItemWidth(char_width * 3);
+		ImGui::InputText(id, (char*)&reg_rx[i][0], 3, ImGuiInputTextFlags_CharsHexadecimal);
+	}
+	// ERn
+	// 不可编辑，必须通过Rn编辑
+	ImGui::TextUnformatted("ERn: ");
+	for (int i = 0; i < 16; i += 2) {
+		ImGui::SameLine();
+		uint16_t val = m_emu->chipset.cpu.reg_r[i + 1]
+						   << 8 |
+					   m_emu->chipset.cpu.reg_r[i];
+		ImGui::Text("%04x ", val);
+	}
+
+	auto show_sfr = ([&](char* ptr, const char* label, int i, int width = 4) {
+		ImGui::TextColored(~UIHelpers::kColorSuccess, "%s", label);
+		ImGui::SameLine();
+        snprintf(id, sizeof(id), "##sfr%d", i);
+		ImGui::SetNextItemWidth(char_width * width + 2);
+		ImGui::InputText(id, (char*)ptr, width + 1, ImGuiInputTextFlags_CharsHexadecimal);
+	});
+	show_sfr(reg_pc, "PC: ", 1, 6);
+	ImGui::SameLine();
+	show_sfr(reg_lr, "LR: ", 2, 6);
+	ImGui::SameLine();
+	show_sfr(reg_ea, "EA: ", 3);
+	ImGui::SameLine();
+	show_sfr(reg_sp, "SP: ", 4);
+	ImGui::SameLine();
+	show_sfr(reg_psw, "PSW: ", 5, 2);
+	ImGui::SameLine();
+	show_sfr(reg_dsr, "DSR: ", 6, 2);
+}
+
+void WatchWindow::UpdateRX() {
+	for (int i = 0; i < 16; i++) {
+		m_emu->chipset.cpu.reg_r[i] = (uint8_t)strtol((char*)reg_rx[i], nullptr, 16);
+	}
+	auto pc = strtol((char*)reg_pc, nullptr, 16);
+	m_emu->chipset.cpu.reg_pc = (uint16_t)pc;
+	m_emu->chipset.cpu.reg_csr = pc >> 16;
+	pc = strtol((char*)reg_lr, nullptr, 16);
+	m_emu->chipset.cpu.reg_lr = (uint16_t)pc;
+	m_emu->chipset.cpu.reg_lcsr = pc >> 16;
+	m_emu->chipset.cpu.reg_ea = (uint16_t)strtol((char*)reg_ea, nullptr, 16);
+	m_emu->chipset.cpu.reg_sp = (uint16_t)strtol((char*)reg_sp, nullptr, 16);
+	m_emu->chipset.cpu.reg_psw = (uint16_t)strtol((char*)reg_psw, nullptr, 16);
+}
+
+void WatchWindow::RenderCore() {
+	char_width = ImGui::CalcTextSize("F").x;
+	casioemu::Chipset& chipset = m_emu->chipset;
+	ImGui::BeginChild("##reg_trace", ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 8), false, 0);
+	auto rm = m_emu->chipset.run_mode;
+	using casioemu::Chipset::RM_HALT;
+	using casioemu::Chipset::RM_RUN;
+	using casioemu::Chipset::RM_STOP;
+	ImGui::TextUnformatted(("WatchWindow.CoreStatus"_l + ": " +
+							(rm == RM_RUN ? "Run" : (rm == RM_STOP ? "Stop" : (rm == RM_HALT ? "Halt" : "?"))))
+			.c_str());
+	// ImGui::Text("Psw");
+	// for (size_t i = 0; i < 8; i++) {
+	//	ImGui::SameLine(i * 25. + 50.);
+	//	ImGui::Text("%zu", i);
+	// }
+	// ImGui::Dummy(ImVec2(0, 0));
+
+	// bool changed = false;
+	// for (size_t i = 0; i < 8; i++) {
+	//	ImGui::SameLine(i * 25. + 50.);
+	//	if (ImGui::Checkbox(("##" + std::to_string(i)).c_str(), &pdx[i])) {
+	//		changed = true;
+	//	}
+	// }
+
+	// if (changed) {
+	//	pd = 0;
+	//	for (int i = 0; i < 8; i++) {
+	//		if (pdx[i]) {
+	//			pd |= (1 << i);
+	//		}
+	//	}
+	//	m_emu->ModelDefinition.pd_value = pd;
+	// }
+	PrepareRX();
+	if (!m_emu->GetPaused()) {
+		ShowRX();
+		if (ImGui::Button("WatchWindow.Pause"_lc)) {
+			m_emu->SetPaused(1);
+		}
+	}
+	else {
+		ModRX();
+		UpdateRX();
+		if (ImGui::Button("WatchWindow.Continue"_lc)) {
+			m_emu->SetPaused(0);
+		}
+	}
+
+	ImGui::EndChild();
+	ImGui::Separator();
+	static int range = 64;
+	float avail_y = ImGui::GetContentRegionAvail().y;
+	float trace_h = std::max(200.0f, avail_y / 2.0f);
+	ImGui::BeginChild("##stack_trace", ImVec2(0, trace_h), false, ImGuiWindowFlags_HorizontalScrollbar);
+	if (ImGui::BeginTable("##Stack_trace", 6, pretty_table | ImGuiTableFlags_ScrollX)) {
+		ImGui::TableSetupColumn("WatchWindow.Function"_lc, ImGuiTableColumnFlags_WidthStretch, 1);
+		ImGui::TableSetupColumn("PC", ImGuiTableColumnFlags_WidthFixed, 60);
+		ImGui::TableSetupColumn("SP", ImGuiTableColumnFlags_WidthFixed, 40);
+		ImGui::TableSetupColumn("ER0", ImGuiTableColumnFlags_WidthFixed, 40);
+		ImGui::TableSetupColumn("ER2", ImGuiTableColumnFlags_WidthFixed, 40);
+		ImGui::TableSetupColumn("LR", ImGuiTableColumnFlags_WidthStretch, 1);
+		ImGui::TableHeadersRow();
+		if (chipset.epscpu) {
+			for (size_t i = 0; i < (chipset.epscpu->STKPTR); i++) {
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				ImGui::Text("%06X", chipset.epscpu->stack[i] << 1);
+				ImGui::TableNextColumn();
+				UIHelpers::ClickableAddress(chipset.epscpu->stack[i] << 1);
+				ImGui::TableNextColumn();
+				ImGui::Text("%04zX", i);
+				ImGui::TableNextColumn();
+				ImGui::Text("%04X", 0);
+				ImGui::TableNextColumn();
+				ImGui::Text("%04X", 0);
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted("");
+			}
+		}
+		else {
+			auto stack = chipset.cpu.stack.get();
+			if (stack->empty()) {
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				ImGui::PushStyleColor(ImGuiCol_Text, UIHelpers::kColorMuted);
+				ImGui::TextUnformatted("No stack frames. Run or step to update stack trace.");
+				ImGui::PopStyleColor();
+				for (int col = 1; col < 6; ++col) {
+					ImGui::TableNextColumn();
+					ImGui::TextUnformatted("");
+				}
+			}
+			else {
+				class reverse_view {
+				public:
+					reverse_view(decltype(*stack)& vector1) : stk(vector1) {}
+					decltype(*stack)& stk;
+					auto begin() {
+						return stk.rbegin();
+					}
+					auto end() {
+						return stk.rend();
+					}
+				};
+				for (auto& frame : reverse_view{*stack}) {
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn();
+					ImGui::TextUnformatted(lookup_symbol(frame.new_pc, g_labels).c_str());
+					ImGui::TableNextColumn();
+					UIHelpers::ClickableAddress(frame.new_pc);
+					ImGui::TableNextColumn();
+					ImGui::Text("%04X", frame.sp);
+					ImGui::TableNextColumn();
+					ImGui::Text("%04X", frame.er0);
+					ImGui::TableNextColumn();
+					ImGui::Text("%04X", frame.er2);
+					ImGui::TableNextColumn();
+					if (frame.lr_pushed) {
+						if (frame.lr == 0xffffff) {
+							ImGui::TextUnformatted("WatchWindow.LrDestroyed"_lc);
+						}
+						else {
+							ImGui::TextUnformatted(lookup_symbol(frame.lr, g_labels).c_str());
+						}
+					}
+				}
+			}
+		}
+		ImGui::EndTable();
+	}
+	ImGui::EndChild();
+	avail_y = ImGui::GetContentRegionAvail().y;
+	float view_h = std::max(250.0f, avail_y);
+	ImGui::BeginChild("##stack_view", ImVec2(0, view_h), false, ImGuiWindowFlags_HorizontalScrollbar);
+	ImGui::TextUnformatted("WatchWindow.StackMemViewRange"_lc);
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(150.0f);
+	ImGui::SliderInt("##range", &range, 64, 2048);
+	uint16_t offset = chipset.cpu.reg_sp & 0xffff;
+	mem_editor.ReadFn = [](const ImU8* data, size_t off) -> ImU8 {
+		return me_mmu->ReadData((size_t)data + off);
+	};
+	mem_editor.WriteFn = [](ImU8* data, size_t off, ImU8 d) {
+		return me_mmu->WriteData((size_t)data + off, d);
+	};
+	auto rng = range;
+	if (rng + offset >= casioemu::GetRamBaseAddr(m_emu->hardware_id) + casioemu::GetRamSize(m_emu->hardware_id)) {
+		rng = casioemu::GetRamSize(m_emu->hardware_id) - offset + casioemu::GetRamBaseAddr(m_emu->hardware_id);
+	}
+	mem_editor.DrawContents((void*)static_cast<size_t>(offset), rng, offset);
+	ImGui::EndChild();
+}

@@ -46,6 +46,8 @@ inline pid_t android_forkpty(int* amaster, char* name, const struct termios* ter
     return pid;
 }
 #define forkpty android_forkpty
+#elif defined(__linux__)
+#include <pty.h>
 #else
 #include <util.h>
 #endif

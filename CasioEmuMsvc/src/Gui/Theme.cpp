@@ -19,13 +19,13 @@
 extern SDL_Surface* background;
 extern SDL_Texture* bg_txt;
 
-class ThemeWindow : public UIWindow {
+class SettingsWindow : public UIWindow {
 private:
 	bool showFileDialog;
 	char tempInjectionFilePath[256];
 
 public:
-	ThemeWindow() : UIWindow("Theme"), showFileDialog(false) {
+	SettingsWindow() : UIWindow("Settings"), showFileDialog(false) {
 		auto& settings = ThemeManager::Instance().Settings();
 		strncpy(tempInjectionFilePath, settings.injectionFilePath, sizeof(tempInjectionFilePath));
 	}
@@ -212,6 +212,31 @@ public:
 				DiscordRPC::UpdatePresence("");
 			}
 		}
+
+		UIHelpers::SectionHeader("Privacy & Network");
+		if (ImGui::Checkbox("Settings.LocalOnlyMode"_lc, &settings.localOnlyMode)) {
+			tm.SaveSettings();
+		}
+		if (ImGui::IsItemHovered()) {
+			ImGui::BeginTooltip();
+			ImGui::TextUnformatted("Settings.LocalOnlyTooltip"_lc);
+			ImGui::EndTooltip();
+		}
+
+		if (settings.localOnlyMode) {
+			ImGui::BeginDisabled();
+		}
+		if (ImGui::Checkbox("Settings.EnableUpdateChecker"_lc, &settings.enableUpdateChecker)) {
+			tm.SaveSettings();
+		}
+		if (ImGui::IsItemHovered()) {
+			ImGui::BeginTooltip();
+			ImGui::TextUnformatted("Settings.EnableUpdateCheckerTooltip"_lc);
+			ImGui::EndTooltip();
+		}
+		if (settings.localOnlyMode) {
+			ImGui::EndDisabled();
+		}
 #endif
 
 		UIHelpers::SectionHeader("Advanced Style Settings");
@@ -236,6 +261,10 @@ public:
 	}
 };
 
+UIWindow* MakeSettingsWindow() {
+	return new SettingsWindow();
+}
+
 UIWindow* MakeThemeWindow() {
-	return new ThemeWindow();
+	return MakeSettingsWindow();
 }

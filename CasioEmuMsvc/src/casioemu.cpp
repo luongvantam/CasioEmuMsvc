@@ -189,16 +189,6 @@ int main(int argc, char* argv[]) {
 	SetConsoleOutputCP(65001);
 	CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 #endif //  _WIN32
-#ifdef ENABLE_SENTRY
-	sentry_options_t* options = sentry_options_new();
-	sentry_options_set_dsn(options, "https://335230bc5e18c7b25464556638c4cfdc@o4510804732018688.ingest.us.sentry.io/4510805048950784");
-	// This is also the default-path. For further information and recommendations:
-	// https://docs.sentry.io/platforms/native/configuration/options/#database-path
-	sentry_options_set_database_path(options, ".sentry");
-	sentry_options_set_release(options, "CasioEmuMsvc@" EMULATOR_VERSION);
-	sentry_options_set_debug(options, 1);
-	sentry_init(options);
-#endif
 #ifdef __ANDROID__
 	chdir(SDL_AndroidGetExternalStoragePath());
 #elif defined(__APPLE__)
@@ -215,8 +205,32 @@ int main(int argc, char* argv[]) {
 	g_local.Load();
 	ThemeManager::Instance().LoadSettings();
 
-	DiscordRPC::Init();
-  DiscordRPC::UpdatePresence("");
+	for (int ix = 1; ix < argc; ++ix) {
+		std::string_view arg(argv[ix]);
+		if (arg == "--local" || arg == "--local-only" || arg == "--offline") {
+			ThemeManager::Instance().Settings().localOnlyMode = true;
+		} else if (arg == "--online" || arg == "--no-local") {
+			ThemeManager::Instance().Settings().localOnlyMode = false;
+		}
+	}
+
+#ifdef ENABLE_SENTRY
+	if (!ThemeManager::Instance().Settings().localOnlyMode) {
+		sentry_options_t* options = sentry_options_new();
+		sentry_options_set_dsn(options, "https://335230bc5e18c7b25464556638c4cfdc@o4510804732018688.ingest.us.sentry.io/4510805048950784");
+		// This is also the default-path. For further information and recommendations:
+		// https://docs.sentry.io/platforms/native/configuration/options/#database-path
+		sentry_options_set_database_path(options, ".sentry");
+		sentry_options_set_release(options, "CasioEmuMsvc@" EMULATOR_VERSION);
+		sentry_options_set_debug(options, 1);
+		sentry_init(options);
+	}
+#endif
+
+	if (ThemeManager::Instance().Settings().enableDiscordRPC && !ThemeManager::Instance().Settings().localOnlyMode) {
+		DiscordRPC::Init();
+		DiscordRPC::UpdatePresence("");
+	}
 
 #ifndef __ANDROID__
 	std::string rendererDriver = ReadRendererHint();
@@ -264,13 +278,6 @@ int main(int argc, char* argv[]) {
 	}
 	bool headless = argv_map.find("headless") != argv_map.end();
 	std::shared_ptr<casioemu::ModelResourceStore> startup_resources;
-	int sdlFlags = SDL_INIT_VIDEO | SDL_INIT_TIMER;
-	if (SDL_Init(sdlFlags) != 0)
-		PANIC("SDL_Init failed: %s\n", SDL_GetError());
-
-	int imgFlags = IMG_INIT_PNG;
-	if (IMG_Init(imgFlags) != imgFlags)
-		PANIC("IMG_Init failed: %s\n", IMG_GetError());
 	if (headless && argv_map["model"].empty()) {
 		PANIC("No model path supplied.\n");
 	}
@@ -279,10 +286,16 @@ int main(int argc, char* argv[]) {
 		argv_map["model"] = std::move(selection.model_path);
 		startup_resources = std::move(selection.resources);
 		if (argv_map["model"].empty()) {
-      DiscordRPC::Shutdown();
-			return -1;
-	  }
+			std::exit(0);
+		}
 	}
+
+	int sdlFlags = SDL_INIT_VIDEO | SDL_INIT_TIMER;
+	int imgFlags = IMG_INIT_PNG;
+	if (SDL_Init(sdlFlags) != 0)
+		PANIC("SDL_Init failed: %s\n", SDL_GetError());
+	if (IMG_Init(imgFlags) != imgFlags)
+		PANIC("IMG_Init failed: %s\n", IMG_GetError());
 
 	// After startupui has done its job:
 	// startupui doesn't need that.
@@ -296,8 +309,6 @@ int main(int argc, char* argv[]) {
 	Emulator emulator(argv_map, false, std::move(startup_resources));
 	m_emu = &emulator;
 
-	// static std::atomic<bool> running(true);
-	
 	DiscordRPC::UpdatePresence(emulator.ModelDefinition.model_name);
 
 #ifdef __ANDROID__
@@ -330,12 +341,12 @@ int main(int argc, char* argv[]) {
 	bool guiCreated = false;
 	auto frame_event = SDL_RegisterEvents(1);
 	bool busy = false;
-	bool running = true;
+	std::atomic<bool> running(true);
 	std::thread t3([&]() {
 		SDL_Event se{};
 		se.type = frame_event;
 		se.user.windowID = SDL_GetWindowID(emulator.window);
-		while (running) {
+		while (running.load()) {
 			if (!busy)
 				SDL_PushEvent(&se);
 #ifdef __ANDROID__
@@ -348,7 +359,6 @@ int main(int argc, char* argv[]) {
 #endif
 		}
 	});
-	t3.detach();
 #ifdef DBG
 	if (!no_dbg) {
 		test_gui(&guiCreated, emulator.window, emulator.renderer);
@@ -369,6 +379,7 @@ int main(int argc, char* argv[]) {
 #if defined(_WIN32) || defined(__ANDROID__)
 	LoadPlugins();
 #endif
+
 	while (emulator.Running()) {
 		SDL_Event event{};
 		busy = false;
@@ -426,8 +437,8 @@ int main(int argc, char* argv[]) {
 			if (!no_dbg) {
 				ThemeManager::Instance().ProcessFontRebuild();
 				if (ThemeManager::Instance().IsBgReloadRequested()) {
-					SDL_DestroyTexture(bg_txt);
-					SDL_FreeSurface(background);
+					if (bg_txt) SDL_DestroyTexture(bg_txt);
+					if (background) SDL_FreeSurface(background);
 					background = IMG_Load("background.jpg");
 					if (background) {
 						bg_txt = SDL_CreateTextureFromSurface(renderer, background);
@@ -484,7 +495,38 @@ int main(int argc, char* argv[]) {
 		case SDL_MOUSEBUTTONUP:
 		case SDL_MOUSEMOTION:
 #endif
-		case SDL_KEYDOWN:
+		case SDL_KEYDOWN: {
+			SDL_Keymod mod = SDL_GetModState();
+			bool isMod = (mod & KMOD_GUI) || (mod & KMOD_CTRL);
+			if (isMod) {
+				auto& tm = ThemeManager::Instance();
+				auto& settings = tm.Settings();
+				float currentScale = tm.GetFontScale();
+				bool handled = false;
+
+				if (event.key.keysym.sym == SDLK_EQUALS || event.key.keysym.sym == SDLK_PLUS || event.key.keysym.sym == SDLK_KP_PLUS) {
+					currentScale = (std::min)(currentScale + 0.10f, 3.0f);
+					handled = true;
+				}
+				else if (event.key.keysym.sym == SDLK_MINUS || event.key.keysym.sym == SDLK_KP_MINUS) {
+					currentScale = (std::max)(currentScale - 0.10f, 0.5f);
+					handled = true;
+				}
+				else if (event.key.keysym.sym == SDLK_0 || event.key.keysym.sym == SDLK_KP_0) {
+					currentScale = 1.0f;
+					handled = true;
+				}
+
+				if (handled) {
+					settings.scale = currentScale;
+					tm.SetFontScale(currentScale);
+					tm.RequestFontRebuild();
+					tm.SaveSettings();
+					break;
+				}
+			}
+		}
+		[[fallthrough]];
 		case SDL_KEYUP:
 		case SDL_TEXTINPUT:
 		case SDL_MOUSEWHEEL:
@@ -506,6 +548,7 @@ int main(int argc, char* argv[]) {
 			break;
 		}
 	}
+
 	running = false;
 	if (t3.joinable()) {
 		t3.join();
@@ -513,9 +556,13 @@ int main(int argc, char* argv[]) {
 	if (bg_txt) {
 		SDL_DestroyTexture(bg_txt);
 	}
+
 #ifdef ENABLE_SENTRY
-	sentry_close();
+	if (!ThemeManager::Instance().Settings().localOnlyMode) {
+		sentry_close();
+	}
 #endif
-  DiscordRPC::Shutdown();
+	DiscordRPC::Shutdown();
+	SDL_Quit();
 	return 0;
 };

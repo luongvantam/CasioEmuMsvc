@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "Containers/ConcurrentObject.h"
 #include <cstdint>
 #include <cstdio>
@@ -28,12 +28,20 @@
 
 #define ENABLE_CRASH_CHECK
 #ifdef ENABLE_CRASH_CHECK
+#if defined(__ANDROID__)
+#include <android/log.h>
+#define PANIC(...) \
+	do { \
+		__android_log_print(ANDROID_LOG_ERROR, "PANIC", __VA_ARGS__); \
+	} while (0)
+#else
 #ifndef PANIC
 #define PANIC(...)           \
 	{                        \
 		printf(__VA_ARGS__); \
 		__debugbreak();      \
 	}
+#endif
 #endif
 #else
 #ifndef PANIC

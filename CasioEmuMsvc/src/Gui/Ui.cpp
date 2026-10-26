@@ -121,13 +121,112 @@ void RenderStatusBar() {
 	ImGui::PopStyleVar();
 }
 
+static void RenderHeaderBar() {
+	if (ImGui::BeginMainMenuBar()) {
+		// Dropdown menu showing all supported tabs with checkmarks
+		if (ImGui::BeginMenu("MenuBar.Windows"_lc)) {
+			for (auto* win : windows) {
+				if (!win) continue;
+				bool isOpen = win->open;
+				if (ImGui::MenuItem(win->name, nullptr, &isOpen)) {
+					win->open = isOpen;
+					if (isOpen) {
+						win->BringToFront();
+					}
+				}
+			}
+			ImGui::Separator();
+			if (ImGui::MenuItem("MenuBar.OpenAll"_lc)) {
+				for (auto* win : windows) if (win) win->open = true;
+			}
+			if (ImGui::MenuItem("MenuBar.CloseAll"_lc)) {
+				for (auto* win : windows) if (win) win->open = false;
+			}
+			ImGui::EndMenu();
+		}
+
+		// Options menu (contains Settings and Local-Only Mode, not duplicated on header bar)
+		if (ImGui::BeginMenu("MenuBar.Options"_lc)) {
+			if (ImGui::MenuItem("Settings"_lc)) {
+				for (auto* win : windows) {
+					if (win && strcmp(win->name, "Settings") == 0) {
+						win->open = true;
+						win->BringToFront();
+						break;
+					}
+				}
+			}
+			bool localOnly = ThemeManager::Instance().Settings().localOnlyMode;
+			if (ImGui::MenuItem("Settings.LocalOnlyMode"_lc, nullptr, &localOnly)) {
+				ThemeManager::Instance().Settings().localOnlyMode = localOnly;
+				ThemeManager::Instance().SaveSettings();
+			}
+			ImGui::EndMenu();
+		}
+
+		ImGui::SameLine(0.0f, 15.0f);
+		ImGui::TextDisabled("|");
+		ImGui::SameLine(0.0f, 15.0f);
+
+		// Quick CPU Controls on Header Bar
+		bool isPaused = m_emu ? m_emu->GetPaused() : false;
+		if (isPaused) {
+			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.65f, 0.25f, 0.9f));
+			char resume_btn[128];
+			snprintf(resume_btn, sizeof(resume_btn), "▶ %s", "MenuBar.Resume"_lc);
+			if (ImGui::SmallButton(resume_btn)) {
+				if (m_emu) m_emu->SetPaused(false);
+			}
+			ImGui::PopStyleColor();
+
+			ImGui::SameLine();
+			char step_btn[128];
+			snprintf(step_btn, sizeof(step_btn), "⏭ %s", "MenuBar.Step"_lc);
+			if (ImGui::SmallButton(step_btn)) {
+				if (code_viewer) code_viewer->RequestStep();
+			}
+
+			ImGui::SameLine();
+			char step_over_btn[128];
+			snprintf(step_over_btn, sizeof(step_over_btn), "↷ %s", "MenuBar.StepOver"_lc);
+			if (ImGui::SmallButton(step_over_btn)) {
+				if (code_viewer) code_viewer->RequestTrace();
+			}
+		} else {
+			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.75f, 0.45f, 0.1f, 0.9f));
+			char pause_btn[128];
+			snprintf(pause_btn, sizeof(pause_btn), "⏸ %s", "MenuBar.Pause"_lc);
+			if (ImGui::SmallButton(pause_btn)) {
+				if (m_emu) m_emu->SetPaused(true);
+			}
+			ImGui::PopStyleColor();
+		}
+
+		ImGui::SameLine();
+		char reset_btn[128];
+		snprintf(reset_btn, sizeof(reset_btn), "↺ %s", "MenuBar.Reset"_lc);
+		if (ImGui::SmallButton(reset_btn)) {
+			if (m_emu) m_emu->chipset.Reset();
+		}
+
+		ImGui::SameLine();
+		char shot_btn[128];
+		snprintf(shot_btn, sizeof(shot_btn), "📸 %s", "MenuBar.Screenshot"_lc);
+		if (ImGui::SmallButton(shot_btn)) {
+			if (m_emu) m_emu->screenshot_requested = true;
+		}
+
+		ImGui::EndMainMenuBar();
+	}
+}
+
 static ImGuiID RenderDockSpace(float reservedBottom) {
 	ImGuiViewport* viewport = ImGui::GetMainViewport();
-	float dockHeight = viewport->Size.y - reservedBottom;
+	float dockHeight = viewport->WorkSize.y - reservedBottom;
 	if (dockHeight < 1.0f) dockHeight = 1.0f;
 
-	ImGui::SetNextWindowPos(viewport->Pos);
-	ImGui::SetNextWindowSize(ImVec2(viewport->Size.x, dockHeight));
+	ImGui::SetNextWindowPos(viewport->WorkPos);
+	ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, dockHeight));
 	ImGui::SetNextWindowViewport(viewport->ID);
 	ImGui::SetNextWindowBgAlpha(0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
@@ -153,6 +252,7 @@ static ImGuiID RenderDockSpace(float reservedBottom) {
 
 static void RenderDebuggerGuiWindows() {
 #ifndef __ANDROID__
+	RenderHeaderBar();
 	ImGuiID dockspace_id = RenderDockSpace(GetStatusBarHeight());
 #endif
 	for (auto win : windows) {
@@ -305,6 +405,7 @@ static CodeViewer* CreateDebuggerGuiWindows() {
 		std::this_thread::sleep_for(std::chrono::microseconds(1));
 	const bool multiview = m_emu->chipset.t4x != nullptr;
 	const bool nx_tools = !casioemu::IsEpsFamily(m_emu->hardware_id) && !multiview;
+
 	std::filesystem::path label_file = m_emu->GetModelFilePath("labels.txt");
 	if (!label_file.empty() && std::filesystem::exists(label_file))
 		g_labels = parseFile(label_file.string());
@@ -346,7 +447,7 @@ static CodeViewer* CreateDebuggerGuiWindows() {
 	if (nx_tools)
 		windows.push_back(new QrCodeWindow());
 #endif
-	windows.push_back(MakeThemeWindow());
+	windows.push_back(MakeSettingsWindow());
 	if (!multiview) {
 		auto* bitmap_window = CreateBitmapViewer();
 		windows.push_back(bitmap_window);
@@ -589,13 +690,28 @@ void gui_cleanup() {
 	}
 #endif
 #endif
+	for (auto* win : windows) {
+		delete win;
+	}
+	windows.clear();
+	code_viewer = nullptr;
+	snapshot_window = nullptr;
+	membp = nullptr;
+	injector = nullptr;
+	g_labels.clear();
+
 	ImGui_ImplSDLRenderer2_Shutdown();
 	ImGui_ImplSDL2_Shutdown();
 	ImGui::DestroyContext();
 
-	SDL_DestroyRenderer(renderer);
-	SDL_DestroyWindow(window);
-	SDL_Quit();
+	if (renderer) {
+		SDL_DestroyRenderer(renderer);
+		renderer = nullptr;
+	}
+	if (window) {
+		SDL_DestroyWindow(window);
+		window = nullptr;
+	}
 #else
 	CleanupWebDebuggerGuiWindows();
 #endif

@@ -33,7 +33,9 @@
 	CFG_VAR(int, windowX, SDL_WINDOWPOS_CENTERED)\
 	CFG_VAR(int, windowY, SDL_WINDOWPOS_CENTERED)\
 	CFG_VAR(int, windowW, 1600)\
-	CFG_VAR(int, windowH, 1080)
+	CFG_VAR(int, windowH, 1080)\
+	CFG_VAR(bool, localOnlyMode, true)\
+	CFG_VAR(bool, enableUpdateChecker, true)
 
 #define DECLARE_VAR(type, name, def_val) type name;
 #define DECLARE_STR(name, size, def_val) char name[size];

@@ -815,19 +815,24 @@ namespace casioemu {
 		bool show_update = false;
 		bool update_result_consumed = false;
 		StartupUi() {
-			update_checker.Start();
-			std::ifstream api_settings{"online_api.cfg"};
-			if (api_settings) {
-				std::string value;
-				std::getline(api_settings, value);
-				if (!value.empty()) std::snprintf(online_api, sizeof(online_api), "%s", value.c_str());
+			auto& settings = ThemeManager::Instance().Settings();
+			if (!settings.localOnlyMode && settings.enableUpdateChecker) {
+				update_checker.Start();
 			}
-			try {
-				OnlineModelClient client{online_api};
-				online_access_token = LoadOnlineToken(client.ApiBase());
-			}
-			catch (...) {
-				online_access_token.clear();
+			if (!settings.localOnlyMode) {
+				std::ifstream api_settings{"online_api.cfg"};
+				if (api_settings) {
+					std::string value;
+					std::getline(api_settings, value);
+					if (!value.empty()) std::snprintf(online_api, sizeof(online_api), "%s", value.c_str());
+				}
+				try {
+					OnlineModelClient client{online_api};
+					online_access_token = LoadOnlineToken(client.ApiBase());
+				}
+				catch (...) {
+					online_access_token.clear();
+				}
 			}
 			std::ifstream ifs2{"roms.db", std::ifstream::binary};
 			if (ifs2) {
@@ -1504,7 +1509,19 @@ namespace casioemu {
 			ImGui::SameLine();
 			if (ImGui::Button("Button.Refresh"_lc, ImVec2(buttonWidth, 0))) Reload();
 			ImGui::SameLine(0.0f, padding * 4.0f);
+			if (ThemeManager::Instance().Settings().localOnlyMode) {
+				ImGui::BeginDisabled();
+			}
 			if (ImGui::Button("StartupUI.OnlineModels"_lc, ImVec2(buttonWidth, 0))) show_online_popup = true;
+			if (ThemeManager::Instance().Settings().localOnlyMode) {
+				ImGui::EndDisabled();
+			}
+			ImGui::SameLine();
+			bool isLocalOnly = ThemeManager::Instance().Settings().localOnlyMode;
+			if (ImGui::Checkbox("Settings.LocalOnlyMode"_lc, &isLocalOnly)) {
+				ThemeManager::Instance().Settings().localOnlyMode = isLocalOnly;
+				ThemeManager::Instance().SaveSettings();
+			}
 			ImGui::PopStyleVar();
 			RenderOnlineModels();
 			if (show_password_input) {

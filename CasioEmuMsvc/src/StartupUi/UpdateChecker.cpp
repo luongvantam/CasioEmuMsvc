@@ -1,5 +1,6 @@
 #include "UpdateChecker.h"
 #include "Config.hpp"
+#include "../Gui/ThemeManager.h"
 #include "../../../McpPlugin/json.hpp"
 #ifndef __ANDROID__
 #include <curl/curl.h>
@@ -19,8 +20,8 @@
 
 namespace casioemu {
 namespace {
-constexpr const char* kApi = "https://api.github.com/repos/telecomadm1145/CasioEmuMsvc/releases?per_page=1";
-constexpr const char* kReleaseBase = "https://github.com/telecomadm1145/CasioEmuMsvc/releases/tag/";
+constexpr const char* kApi = "https://api.github.com/repos/luongvantam/CasioEmuMsvc/releases?per_page=1";
+constexpr const char* kReleaseBase = "https://github.com/luongvantam/CasioEmuMsvc/releases/tag/";
 constexpr const char* kCachePath = "update-check.json";
 constexpr auto kCacheLifetime = std::chrono::hours(1);
 constexpr std::size_t kMaxResponseSize = 1024 * 1024;
@@ -185,6 +186,11 @@ UpdateChecker::UpdateChecker() : state_(std::make_shared<State>()) {}
 UpdateChecker::~UpdateChecker() = default;
 void UpdateChecker::Start() {
 	if (started_.exchange(true)) return;
+	auto& settings = ThemeManager::Instance().Settings();
+	if (settings.localOnlyMode || !settings.enableUpdateChecker) {
+		SDL_Log("[UpdateChecker] Offline/Local-only mode enabled. Network update check skipped.");
+		return;
+	}
 	auto state = state_;
 	std::thread([state]() {
 		UpdateInfo result;

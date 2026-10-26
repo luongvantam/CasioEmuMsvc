@@ -289,7 +289,7 @@ namespace {
 		g_gui_background_checked = false;
 	}
 
-	casioemu::ModelInfo MakeWebModel(bool real_hardware, bool is_sample_rom, int pd_value, int model_type, bool legacy_ko, size_t rom_size) {
+	casioemu::ModelInfo MakeWebModel(bool real_hardware, bool is_sample_rom, int pd_value, int model_type, bool legacy_ko, size_t rom_size = 0) {
 		const auto hardware_id = HardwareIdFromCoreType(model_type);
 		casioemu::ModelInfo model{};
 		model.csr_mask = hardware_id == casioemu::HW_SOLARII ? 0x0 : 0xf;
@@ -980,7 +980,7 @@ void WebDebuggerQueueDownload(const char* path, const char* name) {
 			g_emulator.reset();
 			if (!WriteRomFile(rom, len)) return -2;
 			if (has_flash && !WriteFlashFile(flash, flash_len)) return -4;
-			auto model = MakeWebModel(true, false, pd_value, model_type, legacy_ko != 0, len);
+			auto model = MakeWebModel(true, false, pd_value, model_type, legacy_ko != 0, static_cast<size_t>(len));
 			// EPS W192 models may or may not have an external flash image. Only
 			// attach the resource when the caller actually supplied one.
 			if (has_flash && casioemu::IsEpsFamily(hardware_id))
